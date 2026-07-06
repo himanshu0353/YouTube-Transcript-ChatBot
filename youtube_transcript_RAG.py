@@ -5,6 +5,8 @@ from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbe
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from dotenv import load_dotenv
+from langchain_core.runnables import RunnableParallel, RunnablePassthrough, RunnableLambda
+from langchain_core.output_parsers import StrOutputParser
 import os
 
 load_dotenv()
@@ -42,7 +44,7 @@ vector_Store = FAISS.from_documents(chunks, embeddings)
 # Creating retriever
 retriever = vector_Store.as_retriever(search_kwargs={'k':3})
 
-result = retriever.invoke('what is llm')
+result = retriever.invoke('what is llm and why it existed')
 
 
 # llm model creation
@@ -64,9 +66,19 @@ prompt = PromptTemplate(
 question = 'is the topic of llms are discussed in this video?is yes then what was discussed'
 retrieved_docs = retriever.invoke(question)
 
-context_text = "\n\n".join(doc.page_content for doc in retrieved_docs)
-final_prompt = prompt.invoke({'context':context_text,'question':question})
+def format_docs(retrieved_docs):
+    context_text = "\n\n".join(doc.page_content for doc in retrieved_docs)
+    return context_text
 
-answer = llm.invoke(final_prompt)
+parallel_chain = RunnableParallel({
+    'context': retriever | RunnableLambda(format_docs),
+    'question': RunnablePassthrough()
+})
 
-print(answer.text)
+parser = StrOutputParser()
+main_chain = parallel_chain | prompt | llm | parser
+
+main_chain.invoke('can you summarise the video?')
+
+
+
